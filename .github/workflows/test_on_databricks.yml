@@ -28,7 +28,7 @@ jobs:
           }
         libraries-json: |
             [
-              { "pypi": { "package": "pytest" } }
+              { "pypi": { "package": "pytest==8.4.1" } }
             ]
         workspace-temp-dir: /tmp/databricks-github-actions
         git-provider: gitHub
