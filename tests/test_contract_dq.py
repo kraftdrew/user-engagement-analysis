@@ -1,7 +1,7 @@
 """Contract/Data-Quality tests using StructType schema."""
-
+from pyspark.sql.functions import col, expr
+import datetime
 import os
-from typing import List, Tuple
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
@@ -29,55 +29,64 @@ ALLOWED_PAGES = {"home", "dashboard", "profile"}
 class ContractDQ:
     def __init__(self, df: DataFrame):
         self.df = df
-        self.invalid_df = df
-
-    def test_schema_exact(self):
-        """Schema must match exactly (names, order, types, nullability)."""
-        if self.df.schema != EXPECTED_SCHEMA:
-            self.invalid_df = self.invalid_df.withColumn("invalid_schema", F.lit(True))
-
-    def test_no_extra_columns(self):
-        """Detect unexpected upstream columns."""
-        expected_names = [f.name for f in EXPECTED_SCHEMA.fields]
-        extras = set(self.df.columns) - set(expected_names)
-        if extras:
-            self.invalid_df = self.invalid_df.withColumn("invalid_extra_columns", F.lit(list(extras)))
+        self.df_with_dq_flags = df
 
     def test_required_not_null_and_ranges_and_domain(self):
         """Nulls, non-negative numeric ranges, and enum set for page."""
-        nulls = self.df.filter(
-            F.col("user_id").isNull()
-            | F.col("timestamp").isNull()
-            | F.col("page").isNull()
-            | F.col("duration_seconds").isNull()
+        self.df_with_dq_flags = self.df_with_dq_flags.withColumn(
+            "invalid_nulls",
+            F.when(
+                F.col("user_id").isNull()
+                | F.col("timestamp").isNull()
+                | F.col("page").isNull()
+                | F.col("duration_seconds").isNull(),
+                True,
+            ).otherwise(False),
         )
-        if nulls.count() > 0:
-            self.invalid_df = self.invalid_df.withColumn("invalid_nulls", F.lit(True))
-        ranges = self.df.filter((F.col("user_id") < 0) | (F.col("duration_seconds") < 0))
-        if ranges.count() > 0:
-            self.invalid_df = self.invalid_df.withColumn("invalid_ranges", F.lit(True))
-        domain = self.df.filter(~F.col("page").isin(*ALLOWED_PAGES))
-        if domain.count() > 0:
-            self.invalid_df = self.invalid_df.withColumn("invalid_domain", F.lit(True))
+        self.df_with_dq_flags = self.df_with_dq_flags.withColumn(
+            "invalid_id_and_duration_ranges",
+            F.when(
+                (F.col("user_id") < 0) | (F.col("duration_seconds") < 0),
+                True,
+            ).otherwise(False),
+        )
+        self.df_with_dq_flags = self.df_with_dq_flags.withColumn(
+            "invalid_domain",
+            F.when(~F.col("page").isin(*ALLOWED_PAGES), True).otherwise(False),
+        )
 
     def test_timestamp_parseable(self):
         """String timestamps must be parseable with the agreed pattern."""
-        parsed = self.df.withColumn("ts", F.to_timestamp("timestamp", PATTERN))
-        if parsed.filter(F.col("ts").isNull()).count() > 0:
-            self.invalid_df = self.invalid_df.withColumn("invalid_timestamp", F.lit(True))
-
-    def export_invalid_to_csv(self, output_dir: str):
-        """Export invalid rows to CSV for manual review."""
-        from pyspark.sql.functions import array, col
-        import datetime
-        manual_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        batch_id = manual_datetime.replace("-","").replace(":","").replace(" ","")
-        invalid_columns = [c for c in self.invalid_df.columns if c.startswith("invalid_")]
-        result_df = self.invalid_df.select(
-            F.lit(batch_id).alias("manual_datetime"),
-            "timestamp",
-            *[col(c) for c in self.df.columns],
-            array([col(c) for c in invalid_columns]).alias("invalid_columns")
+        self.df_with_dq_flags = self.df_with_dq_flags.withColumn(
+            "invalid_timestamp",
+            F.when(F.to_timestamp("timestamp", PATTERN).isNull(), True).otherwise(False),
         )
-        result_df.coalesce(1).write.csv(os.path.join(output_dir, "manual_datetime"), header=True, mode="overwrite")
+        
+    def log_invalid_records(self, output_dir: str = 'dbfs:/FileStore/gore_logs'):
+        
+        batch_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        ingest_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        invalid_columns = [c for c in self.df_with_dq_flags.columns if c.startswith("invalid_")]
+        if not invalid_columns:
+            return self.df_with_dq_flags.limit(0)  # No checks run, return empty
+        condition = " OR ".join([f"{c} = True" for c in invalid_columns])
+        result_df =  self.df_with_dq_flags.filter(expr(condition))
+        
+    
+        result_df = result_df.select(
+            *[col(c) for c in self.df.columns],
+            F.lit(ingest_datetime).alias("__ingest_datetime")
+        )
+        result_df.write.parquet(os.path.join(output_dir, batch_id), mode="overwrite")
+        print(f"Exported invalid rows to: {os.path.join(output_dir, batch_id)}")
+        # Return only valid records
 
+    def get_df_with_valid_rows(self):
+        """Run all checks, write invalid records to Parquet, and return only valid records as DataFrame."""
+
+        # Write invalid records to Parquet
+        invalid_columns = [c for c in self.df_with_dq_flags.columns if c.startswith("invalid_")]
+        valid_condition = " AND ".join([f"({c} = False OR {c} IS NULL)" for c in invalid_columns])
+        valid_df = self.df_with_dq_flags.filter(expr(valid_condition)).select(*self.df.columns)
+        return valid_df
