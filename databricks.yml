@@ -1,0 +1,39 @@
+bundle:
+  name: user-engagement-analysis  
+
+resources:
+  jobs:
+    run_tests_job:
+      name: Run PySpark Tests
+      tasks:
+        - task_key: Run_Unit_Tests
+          spark_python_task:
+            python_file: test_runner.py
+            source: GIT
+          job_cluster_key: single_node_cluster
+          libraries:
+            - pypi:
+                package: pytest==8.4.1
+      job_clusters:
+        - job_cluster_key: single_node_cluster
+          new_cluster:
+            spark_version: 16.4.x-scala2.12
+            node_type_id: Standard_DS3_v2
+            driver_node_type_id: Standard_DS3_v2
+            spark_env_vars:
+              PYSPARK_PYTHON: /databricks/python3/bin/python3
+            data_security_mode: DATA_SECURITY_MODE_DEDICATED
+            runtime_engine: STANDARD
+            kind: CLASSIC_PREVIEW
+            is_single_node: true
+      git_source:
+        git_url: https://github.com/kraftdrew/user-engagement-analysis
+        git_provider: gitHub
+        git_branch: ${var.branch}  # Corrected syntax
+      queue:
+        enabled: true
+
+variables:
+  branch:
+    description: "Branch to run tests from"
+    default: main
