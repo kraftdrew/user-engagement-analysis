@@ -1,0 +1,32 @@
+name: Run PySpark Tests on Databricks (Manual)
+
+on:
+  workflow_dispatch:  # Only runs when manually triggered
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Run PySpark test script on job cluster
+      uses: databricks/run-notebook@v0
+      with:
+        databricks-host: ${{ secrets.DATABRICKS_HOST }}
+        databricks-token: ${{ secrets.DATABRICKS_TOKEN }}
+        local-notebook-path: tests/test_runner.py
+        job-cluster: |
+          {
+            "new_cluster": {
+              "spark_version": "16.4.x-scala2.12",
+              "node_type_id": "Standard_DS3_v2",
+              "num_workers": 1,
+              "custom_tags": {
+                "env": "ci",
+                "purpose": "pytest",
+                "owner": "github-actions"
+              }
+            }
+          }
