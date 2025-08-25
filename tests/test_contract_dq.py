@@ -1,60 +1,83 @@
+"""Contract/Data-Quality tests using StructType schema."""
+
+import os
+import sys
+from typing import List, Tuple
+
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    IntegerType,
+    StringType,
+)
 
 PATTERN = "yyyy-MM-dd HH:mm:ss"
-EXPECTED_COLS = ["user_id", "timestamp", "page", "duration_seconds"]
-EXPECTED_TYPES = {
-    "user_id": "int",
-    "timestamp": "string",    # stored as string at ingress; you parse before use
-    "page": "string",
-    "duration_seconds": "int",
-}
+
+EXPECTED_SCHEMA = StructType(
+    [
+        StructField("user_id", IntegerType(), nullable=False),
+        StructField("timestamp", StringType(), nullable=False),  # ingest as string
+        StructField("page", StringType(), nullable=False),
+        StructField("duration_seconds", IntegerType(), nullable=False),
+    ]
+)
+
 ALLOWED_PAGES = {"home", "dashboard", "profile"}
 
-def _valid_df(spark):
-    data = [
-        (1, "2022-01-01 12:00:00", "home",      30),
+
+def _valid_df(spark: SparkSession) -> DataFrame:
+    """Small valid sample matching the ingest contract."""
+    data: List[Tuple[int, str, str, int]] = [
+        (1, "2022-01-01 12:00:00", "home", 30),
         (2, "2022-01-01 12:05:00", "dashboard", 45),
-        (3, "2022-01-01 12:10:00", "profile",   60),
+        (3, "2022-01-01 12:10:00", "profile", 60),
     ]
-    schema = "user_id INT, timestamp STRING, page STRING, duration_seconds INT"
-    return spark.createDataFrame(data, schema=schema)
+    return spark.createDataFrame(data=data, schema=EXPECTED_SCHEMA)
 
-def test_schema_columns_and_types(spark):
-    df = _valid_df(spark)
-    # exact columns
-    assert df.columns == EXPECTED_COLS
-    # types
-    got_types = {f.name: f.dataType.simpleString() for f in df.schema.fields}
-    assert got_types == EXPECTED_TYPES
 
-def test_no_extra_columns_detected(spark):
+def test_schema_exact(spark: SparkSession) -> None:
+    """Schema must match exactly (names, order, types, nullability)."""
     df = _valid_df(spark)
-    # If someone upstream adds a column and you select("*"), this catches it
-    df_extra = df.withColumn("referrer", F.lit("google"))
-    extras = set(df_extra.columns) - set(EXPECTED_COLS)
-    assert extras == {"referrer"}  # detection test; your pipeline would fail/route to quarantine
+    assert df.schema == EXPECTED_SCHEMA
 
-def test_values_in_domain_and_ranges(spark):
+
+def test_no_extra_columns(spark: SparkSession) -> None:
+    """Detect unexpected upstream columns."""
+    df = _valid_df(spark).withColumn("referrer", F.lit("google"))
+    expected_names = [f.name for f in EXPECTED_SCHEMA.fields]
+    extras = set(df.columns) - set(expected_names)
+    assert extras == {"referrer"}
+
+
+def test_required_not_null_and_ranges_and_domain(spark: SparkSession) -> None:
+    """Nulls, non-negative numeric ranges, and enum set for page."""
     df = _valid_df(spark)
-    # required cols not null
-    nulls = df.filter(
-        F.col("user_id").isNull() |
-        F.col("timestamp").isNull() |
-        F.col("page").isNull() |
-        F.col("duration_seconds").isNull()
+
+    # not null
+    assert (
+        df.filter(
+            F.col("user_id").isNull()
+            | F.col("timestamp").isNull()
+            | F.col("page").isNull()
+            | F.col("duration_seconds").isNull()
+        ).count()
+        == 0
     )
-    assert nulls.count() == 0
 
     # ranges
-    viol = df.filter((F.col("user_id") < 0) | (F.col("duration_seconds") < 0))
-    assert viol.count() == 0
+    assert (
+        df.filter((F.col("user_id") < 0) | (F.col("duration_seconds") < 0)).count()
+        == 0
+    )
 
-    # enum for page
-    bad_page = df.filter(~F.col("page").isin(*ALLOWED_PAGES))
-    assert bad_page.count() == 0
+    # enum domain for page
+    assert df.filter(~F.col("page").isin(*ALLOWED_PAGES)).count() == 0
 
-def test_timestamp_parseable(spark):
+
+def test_timestamp_parseable(spark: SparkSession) -> None:
+    """String timestamps must be parseable with the agreed pattern."""
     df = _valid_df(spark)
     parsed = df.withColumn("ts", F.to_timestamp("timestamp", PATTERN))
-    bad = parsed.filter(F.col("ts").isNull())
-    assert bad.count() == 0
+    assert parsed.filter(F.col("ts").isNull()).count() == 0
