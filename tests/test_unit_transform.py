@@ -1,5 +1,6 @@
 from pyspark.sql import functions as F
-from src.engagement import avg_duration_per_page, most_engaging_page
+from src.engagement import EngagementAnalysisProcessor
+
 
 def _sample(spark):
     data = [
@@ -13,16 +14,23 @@ def _sample(spark):
     schema = "user_id INT, timestamp STRING, page STRING, duration_seconds INT"
     return spark.createDataFrame(data, schema=schema)
 
+
 def test_avg_duration_by_page(spark):
     df = _sample(spark)
-    got = {r["page"]: r["avg_duration_sec"] for r in avg_duration_per_page(df).collect()}
-    print (got)
+    processor = EngagementAnalysisProcessor(df)
+    got = {
+        r["page"]: r["avg_duration_sec"]
+        for r in processor.avg_duration_per_page().collect()
+    }
+    print(got)
     assert round(got["home"], 2) == 25.00
     assert round(got["dashboard"], 2) == 42.50
     assert round(got["profile"], 2) == 45.00
 
+
 def test_most_engaging_page(spark):
     df = _sample(spark)
-    top = most_engaging_page(df).collect()[0]
+    processor = EngagementAnalysisProcessor(df)
+    top = processor.most_engaging_page().collect()[0]
     assert top["page"] == "profile"
     assert round(top["avg_duration_sec"], 2) == 45.00
