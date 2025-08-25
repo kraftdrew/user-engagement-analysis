@@ -8,28 +8,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Run tests on Databricks
-      uses: databricks/run-notebook@v0
-      with:
-        databricks-host: ${{ secrets.DATABRICKS_HOST }}
-        databricks-token: ${{ secrets.DATABRICKS_TOKEN }}
-        local-notebook-path: test_runner.py
-        new-cluster-json: |
-          {
-            "spark_version": "16.4.x-scala2.12",
-            "kind": "CLASSIC_PREVIEW",
-            "is_single_node": true,
-            "num_workers": 0,
-            "node_type_id": "Standard_DS3_v2",
-            "driver_node_type_id": "Standard_DS3_v2"
-          }
-        libraries-json: |
-            [
-              { "pypi": { "package": "pytest==8.4.1" } }
-            ]
-        workspace-temp-dir: /tmp/databricks-github-actions
-        git-provider: gitHub
-
+      - name: Run tests on Databricks from current branch (GIT source)
+        uses: databricks/run-submit@v0
+        with:
+          databricks-host: ${{ secrets.DATABRICKS_HOST }}
+          databricks-token: ${{ secrets.DATABRICKS_TOKEN }}
+          submit-json: |
+            {
+              "run_name": "pytest from branch",
+              "tasks": [
+                {
+                  "task_key": "pytest",
+                  "new_cluster": {
+                    "spark_version": "16.4.x-scala2.12",
+                    "kind": "CLASSIC_PREVIEW",
+                    "is_single_node": true,
+                    "num_workers": 0,
+                    "node_type_id": "Standard_DS3_v2",
+                    "driver_node_type_id": "Standard_DS3_v2"
+                  },
+                  "notebook_task": {
+                    "notebook_path": "test_runner.py",
+                    "source": "GIT"
+                  },
+                  "git_source": {
+                    "git_url": "https://github.com/kraftdrew/user-engagement-analysis.git",
+                    "git_provider": "gitHub",
+                    "git_branch": "${{ github.head_ref || github.ref_name }}"
+                  },
+                  "libraries": [
+                    { "pypi": { "package": "pytest==8.4.1" } }
+                  ]
+                }
+              ],
+              "timeout_seconds": 1800
+            }
