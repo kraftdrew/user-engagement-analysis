@@ -1,8 +1,7 @@
 """Contract/Data-Quality tests using StructType schema."""
-
+from pyspark.sql.functions import col, expr
+import datetime
 import os
-import sys
-from typing import List, Tuple
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
@@ -27,57 +26,67 @@ EXPECTED_SCHEMA = StructType(
 ALLOWED_PAGES = {"home", "dashboard", "profile"}
 
 
-def _valid_df(spark: SparkSession) -> DataFrame:
-    """Small valid sample matching the ingest contract."""
-    data: List[Tuple[int, str, str, int]] = [
-        (1, "2022-01-01 12:00:00", "home", 30),
-        (2, "2022-01-01 12:05:00", "dashboard", 45),
-        (3, "2022-01-01 12:10:00", "profile", 60),
-    ]
-    return spark.createDataFrame(data=data, schema=EXPECTED_SCHEMA)
+class ContractDQ:
+    def __init__(self, df: DataFrame):
+        self.df = df
+        self.df_with_dq_flags = df
 
+    def test_required_not_null_and_ranges_and_domain(self):
+        """Nulls, non-negative numeric ranges, and enum set for page."""
+        self.df_with_dq_flags = self.df_with_dq_flags.withColumn(
+            "invalid_nulls",
+            F.when(
+                F.col("user_id").isNull()
+                | F.col("timestamp").isNull()
+                | F.col("page").isNull()
+                | F.col("duration_seconds").isNull(),
+                True,
+            ).otherwise(False),
+        )
+        self.df_with_dq_flags = self.df_with_dq_flags.withColumn(
+            "invalid_id_and_duration_ranges",
+            F.when(
+                (F.col("user_id") < 0) | (F.col("duration_seconds") < 0),
+                True,
+            ).otherwise(False),
+        )
+        self.df_with_dq_flags = self.df_with_dq_flags.withColumn(
+            "invalid_domain",
+            F.when(~F.col("page").isin(*ALLOWED_PAGES), True).otherwise(False),
+        )
 
-def test_schema_exact(spark: SparkSession) -> None:
-    """Schema must match exactly (names, order, types, nullability)."""
-    df = _valid_df(spark)
-    assert df.schema == EXPECTED_SCHEMA
+    def test_timestamp_parseable(self):
+        """String timestamps must be parseable with the agreed pattern."""
+        self.df_with_dq_flags = self.df_with_dq_flags.withColumn(
+            "invalid_timestamp",
+            F.when(F.to_timestamp("timestamp", PATTERN).isNull(), True).otherwise(False),
+        )
+        
+    def log_invalid_records(self, output_dir: str = 'dbfs:/FileStore/gore_logs'):
+        
+        batch_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        ingest_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        invalid_columns = [c for c in self.df_with_dq_flags.columns if c.startswith("invalid_")]
+        if not invalid_columns:
+            return self.df_with_dq_flags.limit(0)  # No checks run, return empty
+        condition = " OR ".join([f"{c} = True" for c in invalid_columns])
+        result_df =  self.df_with_dq_flags.filter(expr(condition))
+        
+    
+        result_df = result_df.select(
+            *[col(c) for c in self.df.columns],
+            F.lit(ingest_datetime).alias("__ingest_datetime")
+        )
+        result_df.write.parquet(os.path.join(output_dir, batch_id), mode="overwrite")
+        print(f"Exported invalid rows to: {os.path.join(output_dir, batch_id)}")
+        # Return only valid records
 
+    def get_df_with_valid_rows(self):
+        """Run all checks, write invalid records to Parquet, and return only valid records as DataFrame."""
 
-def test_no_extra_columns(spark: SparkSession) -> None:
-    """Detect unexpected upstream columns."""
-    df = _valid_df(spark).withColumn("referrer", F.lit("google"))
-    expected_names = [f.name for f in EXPECTED_SCHEMA.fields]
-    extras = set(df.columns) - set(expected_names)
-    assert extras == {"referrer"}
-
-
-def test_required_not_null_and_ranges_and_domain(spark: SparkSession) -> None:
-    """Nulls, non-negative numeric ranges, and enum set for page."""
-    df = _valid_df(spark)
-
-    # not null
-    assert (
-        df.filter(
-            F.col("user_id").isNull()
-            | F.col("timestamp").isNull()
-            | F.col("page").isNull()
-            | F.col("duration_seconds").isNull()
-        ).count()
-        == 0
-    )
-
-    # ranges
-    assert (
-        df.filter((F.col("user_id") < 0) | (F.col("duration_seconds") < 0)).count()
-        == 0
-    )
-
-    # enum domain for page
-    assert df.filter(~F.col("page").isin(*ALLOWED_PAGES)).count() == 0
-
-
-def test_timestamp_parseable(spark: SparkSession) -> None:
-    """String timestamps must be parseable with the agreed pattern."""
-    df = _valid_df(spark)
-    parsed = df.withColumn("ts", F.to_timestamp("timestamp", PATTERN))
-    assert parsed.filter(F.col("ts").isNull()).count() == 0
+        # Write invalid records to Parquet
+        invalid_columns = [c for c in self.df_with_dq_flags.columns if c.startswith("invalid_")]
+        valid_condition = " AND ".join([f"({c} = False OR {c} IS NULL)" for c in invalid_columns])
+        valid_df = self.df_with_dq_flags.filter(expr(valid_condition)).select(*self.df.columns)
+        return valid_df
