@@ -11,22 +11,18 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Run PySpark test script on job cluster
+    - name: Run tests on Databricks
       uses: databricks/run-notebook@v0
       with:
         databricks-host: ${{ secrets.DATABRICKS_HOST }}
         databricks-token: ${{ secrets.DATABRICKS_TOKEN }}
         local-notebook-path: tests/test_runner.py
-        job-cluster: |
+        new-cluster-json: |
           {
-            "new_cluster": {
-              "spark_version": "16.4.x-scala2.12",
-              "node_type_id": "Standard_DS3_v2",
-              "num_workers": 1,
-              "custom_tags": {
-                "env": "ci",
-                "purpose": "pytest",
-                "owner": "github-actions"
-              }
-            }
+            "spark_version": "16.4.x-scala2.12",
+            "node_type_id": "Standard_DS3_v2",
+            "num_workers": 1
           }
+        workspace-temp-dir: /tmp/databricks-github-actions
+        git-provider: gitHub
+
