@@ -1,11 +1,32 @@
-from pyspark.sql import DataFrame
+from pyspark.sql import DataFrame, SparkSession
 import pyspark.sql.functions as F
+from pyspark.sql.types import StructType
 
 
 class EngagementAnalysisProcessor:
     def __init__(self) -> None:
         """Initialize the EngagementAnalysisProcessor."""
         pass
+
+    def build_df_from_dbfs(spark: SparkSession, path: str, schema: StructType) -> DataFrame:
+        """
+        Read user engagement CSV from DBFS with a fixed schema.
+
+        Args:
+            spark (SparkSession): Active Spark session (Databricks-friendly).
+            path (str): DBFS path to the CSV file.
+            schema (StructType): Schema to apply when reading the CSV.
+
+        Returns:
+            DataFrame: Loaded DataFrame with expected columns and types.
+        """
+        return (
+            spark.read
+            .format("csv")
+            .option("header", "true")
+            .schema(schema)
+            .load(path)
+        )
 
     def avg_duration_per_page(self, df: DataFrame) -> DataFrame:
         """

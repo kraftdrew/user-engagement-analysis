@@ -27,10 +27,10 @@ user-engagement-analysis/
 ├── assets/                         # Documentation images and diagrams
 │
 ├── src/                            # Source code for engagement analysis
-│   └── engagement.py               # EngagementAnalysisProcessor class and related logic
+│   ├── engagement_analysis_processor.py  # EngagementAnalysisProcessor class and related logic
+│   └── user_engagement_dq.py       # UserEngagementDQ class for data quality checks
 │
 ├── tests/                          # Unit and data quality tests
-│   ├── test_data_quality.py         # UserEngagementDQ class and test cases for data validation
 │   ├── test_unit.py                # Unit tests for transformation logic
 │   └── conftest.py                 # Pytest configuration and fixtures
 │
@@ -39,9 +39,9 @@ user-engagement-analysis/
 ├── databricks.yml                  # Databricks bundle job configuration
 ├── nb_engagement_analysis.ipynb    # Main notebook for analysis and testing
 ├── requirements.txt                # Python dependencies for the project
-├── test_runner.py                 # Entrypoint for running tests on Databricks
+├── test_runner.py                  # Entrypoint for running tests on Databricks
+└── run_engagement.py               # Standalone script to run engagement analysis
 ```
-
 
 ## Testing Diagram
 
