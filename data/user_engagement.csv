@@ -1,0 +1,7 @@
+user_id,timestamp,page,duration_seconds
+4,2023-02-15 09:00:00,home,25
+5,2023-02-15 09:10:00,dashboard,50
+6,2023-02-15 09:20:00,profile,70
+4,2023-02-15 09:30:00,home,15
+5,2023-02-15 09:40:00,profile,35
+6,2023-02-15 09:50:00,dashboard,45

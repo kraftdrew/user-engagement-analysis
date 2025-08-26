@@ -26,7 +26,7 @@ EXPECTED_SCHEMA = StructType(
 ALLOWED_PAGES = {"home", "dashboard", "profile"}
 
 
-class ContractDQ:
+class UserEngagementDQ:
     def __init__(self, df: DataFrame):
         self.df = df
         self.df_with_dq_flags = df
