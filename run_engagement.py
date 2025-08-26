@@ -15,7 +15,7 @@ def main() -> None:
     if spark is None:
         raise RuntimeError("No active SparkSession found. Run inside Databricks or create a session.")
 
-    input_path = "dbfs:/FileStore/gore_csv/user_engagement_invalid.csv"
+    input_path = "dbfs:/FileStore/gore_csv/user_engagement.csv"
     schema = StructType([
         StructField("user_id", IntegerType(), True),
         StructField("timestamp", StringType(), True),
@@ -27,11 +27,14 @@ def main() -> None:
 
     df = processor.build_df_from_dbfs(spark, input_path, schema)
 
+    avg_df = processor.avg_duration_per_page(df)
     top_row = processor.most_engaging_page(df).collect()[0]
-    print(f"Most engaging page: {top_row['page']} ({top_row['avg_duration_sec']} sec)")
 
-    for row in processor.avg_duration_per_page(df).collect():
-        print(f"Avg on {row['page']}: {row['avg_duration_sec']} sec")
+    print("Average Duration Per Page:\n")
+    avg_df.show(truncate=False)
+    print("")
+
+    print(f"Most engaging page: {top_row['page']} (average duration: {top_row['avg_duration_sec']} seconds)")
 
 
 if __name__ == "__main__":

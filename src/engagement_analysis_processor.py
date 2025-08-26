@@ -8,7 +8,7 @@ class EngagementAnalysisProcessor:
         """Initialize the EngagementAnalysisProcessor."""
         pass
 
-    def build_df_from_dbfs(spark: SparkSession, path: str, schema: StructType) -> DataFrame:
+    def build_df_from_dbfs(self, spark: SparkSession, path: str, schema: StructType) -> DataFrame:
         """
         Read user engagement CSV from DBFS with a fixed schema.
 
