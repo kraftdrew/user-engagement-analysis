@@ -1,4 +1,3 @@
-"""Contract/Data-Quality tests using StructType schema."""
 from pyspark.sql.functions import col, expr
 import datetime
 import os
