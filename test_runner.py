@@ -1,9 +1,10 @@
-from pathlib import Path
-import pytest
-import shutil
-import warnings
 import os
+import shutil
 import sys
+import warnings
+from pathlib import Path
+
+import pytest
 
 # Suppress interactive shell exit warning
 warnings.filterwarnings("ignore", category=UserWarning, module="IPython")
