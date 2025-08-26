@@ -4,21 +4,16 @@ import os
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import (
-    StructType,
-    StructField,
-    IntegerType,
-    StringType,
-)
+from pyspark.sql.types import StructType, StructField, IntegerType, StringType
 
 PATTERN = "yyyy-MM-dd HH:mm:ss"
 
 EXPECTED_SCHEMA = StructType(
     [
-        StructField("user_id", IntegerType(), nullable=False),
-        StructField("timestamp", StringType(), nullable=False),  # ingest as string
-        StructField("page", StringType(), nullable=False),
-        StructField("duration_seconds", IntegerType(), nullable=False),
+        StructField("user_id", IntegerType(), True),
+        StructField("timestamp", StringType(), True),  # ingest as string
+        StructField("page", StringType(), True),
+        StructField("duration_seconds", IntegerType(), True),
     ]
 )
 
